@@ -12,10 +12,13 @@ interface SettingsState {
   setTransferBandwidthKiB: (value: number) => void;
   maxTextPreviewSizeMb: number;
   autoRefreshOnFocus: boolean;
+  /** Thumbrella connect string. Empty keeps the built-in file type icons. */
+  thumbrellaConnect: string;
   setDefaultRegion: (region: string) => void;
   setMaxConcurrentTransfers: (max: number) => void;
   setMaxTextPreviewSizeMb: (max: number) => void;
   setAutoRefreshOnFocus: (enabled: boolean) => void;
+  setThumbrellaConnect: (connect: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -27,6 +30,7 @@ export const useSettingsStore = create<SettingsState>()(
       setTransferBandwidthKiB: (value) => { if (Number.isInteger(value) && (value === 0 || (value >= 64 && value <= 1048576))) set({ transferBandwidthKiB: value }); },
       maxTextPreviewSizeMb: 2,
       autoRefreshOnFocus: false, // Disabled by default - can cause freezing on Ubuntu
+      thumbrellaConnect: '',
       setDefaultRegion: (defaultRegion) => set({ defaultRegion }),
       setMaxConcurrentTransfers: (maxConcurrentTransfers) => set({ maxConcurrentTransfers }),
       setMaxTextPreviewSizeMb: (value) => set({
@@ -36,6 +40,7 @@ export const useSettingsStore = create<SettingsState>()(
         ),
       }),
       setAutoRefreshOnFocus: (autoRefreshOnFocus) => set({ autoRefreshOnFocus }),
+      setThumbrellaConnect: (thumbrellaConnect) => set({ thumbrellaConnect: thumbrellaConnect.trim() }),
     }),
     {
       name: 'brows3-settings',

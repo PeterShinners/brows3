@@ -19,8 +19,13 @@ import { toast } from '@/store/toastStore';
 import { BaseDialog } from '../common/BaseDialog';
 import ImagePreviewViewer from './ImagePreviewViewer';
 import { ConfirmDialog } from '../common/ConfirmDialog';
-import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
+import { canDisplayImageInline, getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import { useSettingsStore } from '@/store/settingsStore';
+import { ThumbnailImage } from '../common/ObjectThumbnail';
+import { ThumbnailInfo } from '../common/ThumbnailInfo';
+import { useObjectThumbnailUrl } from '@/hooks/useObjectThumbnail';
+import { useThumbnailMetadata } from '@/hooks/useThumbnailMetadata';
+import { useThumbnailsEnabled } from '@/hooks/useThumbrella';
 
 interface ObjectPreviewDialogProps {
   open: boolean;
@@ -68,6 +73,7 @@ export default function ObjectPreviewDialog({
   const [loadedObjectKey, setLoadedObjectKey] = useState('');
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [discardAction, setDiscardAction] = useState<'close' | 'cancel' | null>(null);
+  const [inlineNotice, setInlineNotice] = useState<{ message: string; severity: 'info' | 'error' } | null>(null);
   const previewRoot = useRef<HTMLDivElement>(null);
   const loadRequestIdRef = useRef(0);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,11 +87,17 @@ export default function ObjectPreviewDialog({
   const filename = getObjectName(objectKey);
   const ext = getObjectExtension(filename);
   const objectKind = getObjectKind(filename, contentType);
-  const isImageFile = objectKind === 'image';
+  const isImageFile = objectKind === 'image' && canDisplayImageInline(filename, contentType);
   const isAudioFile = objectKind === 'audio';
   const isVideoFile = objectKind === 'video';
   const isPdfFile = objectKind === 'pdf';
   const isText = objectKind === 'text';
+
+  // Thumbrella supplies a thumbnail for any format, plus the metadata shown in
+  // the details sidebar and used when nothing else can be rendered inline.
+  const thumbnailsEnabled = useThumbnailsEnabled();
+  const thumbnailUrl = useObjectThumbnailUrl(bucketName, bucketRegion, objectKey, thumbnailsEnabled && open);
+  const thumbnailMetadata = useThumbnailMetadata(thumbnailUrl);
   
   // Content is authoritative across undo, save, and controlled discard resets.
   // Monaco assigns a new version even when restoring the original text.
@@ -100,6 +112,7 @@ export default function ObjectPreviewDialog({
       setLoadedObjectKey(objectKey);
       setIsLoading(true);
       setError(null);
+      setInlineNotice(null);
       setContent('');
       setTextIdentity(null);
       setEditedContent('');
@@ -143,8 +156,18 @@ export default function ObjectPreviewDialog({
         if (cancelled || requestId !== loadRequestIdRef.current) return;
 
         const resolvedKind = getObjectKind(filename, resolvedContentType);
+        if (resolvedKind === 'image' && !canDisplayImageInline(filename, resolvedContentType)) {
+          setInlineNotice({
+            severity: 'info',
+            message: 'This image format cannot be displayed in the app. Download it to open it in an image editor.',
+          });
+          return;
+        }
         if (resolvedKind === 'text' && resolvedObjectSize && resolvedObjectSize > maxPreviewBytes) {
-          setError(`File is too large to preview (${(resolvedObjectSize / 1024 / 1024).toFixed(2)} MB). Increase the ${maxTextPreviewSizeMb} MB text preview limit in Settings or download it.`);
+          setInlineNotice({
+            severity: 'error',
+            message: `File is too large to preview (${(resolvedObjectSize / 1024 / 1024).toFixed(2)} MB). Increase the ${maxTextPreviewSizeMb} MB text preview limit in Settings or download it.`,
+          });
           return;
         }
 
@@ -178,7 +201,10 @@ export default function ObjectPreviewDialog({
             setTextIdentity({ etag: textContent.e_tag, profileId: textContent.profile_id });
           }
         } else {
-          setError('This object is not previewable in the app. Please download it to inspect locally.');
+          setInlineNotice({
+            severity: 'info',
+            message: 'This object is not previewable in the app. Please download it to inspect locally.',
+          });
         }
       } catch (err) {
         console.error("Failed to load object content:", err);
@@ -380,7 +406,7 @@ export default function ObjectPreviewDialog({
       }}>
         {(navigation || onToggleSelect) && <Box role="group" aria-label="Preview controls" sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', pb: 1.5 }}>
           {onToggleSelect && <Button size="small" variant="outlined" aria-label="Select file" aria-pressed={isSelected} onClick={onToggleSelect} sx={{ borderRadius: '999px', color: 'text.primary', bgcolor: isSelected ? 'action.selected' : 'transparent' }}>{isSelected ? 'Selected' : 'Select'}</Button>}
-          {navigation && (navigation.total > 1 || navigation.onNext) && <>
+          {navigation && navigation.index >= 0 && (navigation.total > 1 || navigation.onNext) && <>
             <Button size="small" sx={{ borderRadius: '999px', color: 'text.primary' }} aria-label="Previous file" disabled={navBlocked || !navigation.onPrevious} onClick={navigation.onPrevious}>Previous</Button>
             <Typography variant="caption" aria-label="Preview position">{navigation.index + 1} / {navigation.total}</Typography>
             <Button size="small" sx={{ borderRadius: '999px', color: 'text.primary' }} aria-label="Next file" disabled={navBlocked || !navigation.onNext} onClick={navigation.onNext}>Next</Button>
@@ -388,6 +414,8 @@ export default function ObjectPreviewDialog({
           {isEditing && <Typography variant="caption" color="text.secondary">Finish editing before navigating.</Typography>}
         </Box>}
         {(navigation?.busy || navigation?.error) && <Typography role="status" variant="body2" sx={{ mb: 1 }}>{navigation.busy ? 'Looking for the next previewable file...' : navigation.error}</Typography>}
+        <Box sx={{ flex: 1, display: 'flex', gap: 2, minHeight: 0, overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         {isLoading && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             <CircularProgress size={40} thickness={4} />
@@ -396,16 +424,40 @@ export default function ObjectPreviewDialog({
         )}
 
         {error && (
-          <Box sx={{ p: 4 }}>
-            <Alert severity="error" variant="filled" sx={{ borderRadius: 2 }}>{error}</Alert>
-          </Box>
+          thumbnailUrl ? (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, p: 3, overflow: 'auto' }}>
+              <ThumbnailImage src={thumbnailUrl} alt={filename} />
+              <Alert severity="error" variant="filled" sx={{ borderRadius: 2, maxWidth: 480 }}>{error}</Alert>
+            </Box>
+          ) : (
+            <Box sx={{ p: 4 }}>
+              <Alert severity="error" variant="filled" sx={{ borderRadius: 2 }}>{error}</Alert>
+            </Box>
+          )
+        )}
+
+        {!isLoading && !error && inlineNotice && (
+          thumbnailUrl ? (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, p: 3, overflow: 'auto' }}>
+              <ThumbnailImage src={thumbnailUrl} alt={filename} />
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 480, textAlign: 'center' }}>
+                {inlineNotice.message}
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ p: 4 }}>
+              {inlineNotice.severity === 'error'
+                ? <Alert severity="error" variant="filled" sx={{ borderRadius: 2 }}>{inlineNotice.message}</Alert>
+                : <Typography color="text.secondary" variant="body1" sx={{ fontWeight: 500 }}>{inlineNotice.message}</Typography>}
+            </Box>
+          )
         )}
 
         {!isLoading && isText && textIdentity && !textIdentity.etag && (
           <Alert severity="warning">This provider did not return an ETag. Download or copy the text to edit it safely.</Alert>
         )}
 
-        {!isLoading && (!error || textIdentity) && (
+        {!isLoading && !inlineNotice && (!error || textIdentity) && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Video Preview */}
             {isVideoFile && presignedUrl && (
@@ -483,6 +535,18 @@ export default function ObjectPreviewDialog({
             )}
           </Box>
         )}
+        </Box>
+        {thumbnailMetadata && (
+          <Box
+            component="aside"
+            aria-label="File details"
+            sx={{ width: { xs: '100%', md: 236 }, flexShrink: 0, borderLeft: { md: 1 }, borderTop: { xs: 1, md: 0 }, borderColor: 'divider', pl: { md: 2 }, pt: { xs: 1.5, md: 0 }, overflowY: 'auto' }}
+          >
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Details</Typography>
+            <ThumbnailInfo metadata={thumbnailMetadata} />
+          </Box>
+        )}
+        </Box>
       </Box>
     </BaseDialog>
     <ConfirmDialog open={!!discardAction} title="Discard unsaved changes?" message="Your edits have not been saved. Discard them or keep editing." confirmLabel="Discard changes" cancelLabel="Keep editing" isDestructive onClose={() => setDiscardAction(null)} onConfirm={() => {

@@ -33,6 +33,7 @@ import { profileApi, transferApi } from '@/lib/tauri';
 import { useClipboardShortcuts } from '@/hooks/useClipboardShortcuts';
 import { preloadMonaco } from '@/lib/monaco-config';
 import { useSavedJobEvents } from '@/hooks/useSavedJobEvents';
+import { useThumbrellaConnection } from '@/hooks/useThumbrella';
 import { usePathname } from 'next/navigation';
 
 const drawerWidth = 260; 
@@ -44,6 +45,7 @@ interface AppShellProps {
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   useSavedJobEvents();
+  useThumbrellaConnection();
   const { themeMode, sidebarOpen, setSidebarOpen } = useAppStore();
   const { profiles, setProfiles, setActiveProfileId } = useProfileStore();
   const maxConcurrentTransfers = useSettingsStore((state) => state.maxConcurrentTransfers);

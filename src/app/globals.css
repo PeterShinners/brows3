@@ -32,3 +32,10 @@ a {
   outline: 2px solid #1976d2;
   outline-offset: 2px;
 }
+
+/* Downscaled Thumbrella thumbnails in the object list lose definition, so give
+   the list-size element a little extra contrast. The full-size preview keeps
+   the image as generated. */
+tbr-thumb.tbr-list-thumb {
+  filter: contrast(1.2);
+}

@@ -20,6 +20,7 @@ import {
   Chip,
   Divider,
   Alert,
+  Link,
 } from '@mui/material';
 import {
   Update as UpdateIcon,
@@ -39,6 +40,8 @@ import {
 import { useAppStore } from '@/store/appStore';
 import { useMonitorStore } from '@/store/monitorStore';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
+import { useThumbrellaStore } from '@/hooks/useThumbrella';
+import { configureThumbrella } from '@/lib/thumbrella';
 import { toast } from '@/store/toastStore';
 import { bucketApi, copyToClipboard, invalidateCache, isTauri, logApi, transferApi, type LogFileInfo } from '@/lib/tauri';
 
@@ -51,8 +54,34 @@ export default function SettingsPage() {
     maxConcurrentTransfers, setMaxConcurrentTransfers,
     transferBandwidthKiB, setTransferBandwidthKiB,
     maxTextPreviewSizeMb, setMaxTextPreviewSizeMb,
-    autoRefreshOnFocus, setAutoRefreshOnFocus
+    autoRefreshOnFocus, setAutoRefreshOnFocus,
+    thumbrellaConnect, setThumbrellaConnect,
   } = useSettingsStore();
+
+  const thumbrellaStatus = useThumbrellaStore((state) => state.status);
+  const thumbrellaError = useThumbrellaStore((state) => state.error);
+  const [thumbConnect, setThumbConnect] = useState(thumbrellaConnect);
+  const [savingThumbConnect, setSavingThumbConnect] = useState(false);
+  const [thumbConnectError, setThumbConnectError] = useState('');
+  useEffect(() => { setThumbConnect(thumbrellaConnect); }, [thumbrellaConnect]);
+
+  async function applyThumbrellaConnect() {
+    if (savingThumbConnect) return;
+    const next = thumbConnect.trim();
+    setSavingThumbConnect(true);
+    setThumbConnectError('');
+    try {
+      await configureThumbrella(next);
+      setThumbrellaConnect(next);
+      if (next) toast.success('Thumbnails enabled', 'Thumbrella is generating previews for the file list.');
+      else toast.info('Thumbnails disabled', 'The file list shows built-in file type icons again.');
+    } catch (error) {
+      // Keep the previous connect string active so the list keeps working.
+      setThumbConnectError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSavingThumbConnect(false);
+    }
+  }
   
   const [version, setVersion] = useState<string>('...');
   const [appDataDir, setAppDataDir] = useState<string>('Loading...');
@@ -210,6 +239,61 @@ export default function SettingsPage() {
                 sx={{ width: 150 }}
               />
             </ListItemSecondaryAction>
+          </ListItem>
+        </List>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ mb: 3 }}>
+        <Box sx={{ p: 2, bgcolor: 'action.hover', borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle1" fontWeight={600}>Thumbnails</Typography>
+        </Box>
+        <List>
+          <ListItem sx={{ flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
+            <ListItemText
+              primary="Thumbrella connect string"
+              secondary={
+                <>
+                  Replace the file type icons in the object list with generated previews from{' '}
+                  <Link href="https://thumbrella.dev" target="_blank" rel="noopener noreferrer">Thumbrella</Link>.
+                  Use a self-hosted server URL or a Thumbrella Cloud token. Leave empty to keep the built-in icons.
+                  The configured server receives short-lived presigned object URLs.
+                </>
+              }
+            />
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+              <TextField
+                label="Connect string"
+                size="small"
+                fullWidth
+                value={thumbConnect}
+                disabled={savingThumbConnect}
+                placeholder="https://thumbrella.example.com or tbr_e_..."
+                onChange={(event) => { setThumbConnect(event.target.value); setThumbConnectError(''); }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    applyThumbrellaConnect();
+                  }
+                }}
+                error={!!thumbConnectError}
+                helperText={thumbConnectError || 'Applied connect strings are verified before thumbnails are used.'}
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                sx={{ borderRadius: '999px', color: 'text.primary', mt: 0.5 }}
+                disabled={savingThumbConnect || thumbConnect.trim() === thumbrellaConnect}
+                onClick={applyThumbrellaConnect}
+              >
+                {savingThumbConnect ? 'Connecting...' : 'Save'}
+              </Button>
+            </Box>
+            {thumbrellaStatus === 'ready' && !thumbConnectError && (
+              <Alert severity="success">Thumbnails are streaming from {thumbrellaConnect}.</Alert>
+            )}
+            {thumbrellaStatus === 'error' && !thumbConnectError && (
+              <Alert severity="error">{thumbrellaError || 'Thumbrella rejected the saved connect string.'}</Alert>
+            )}
           </ListItem>
         </List>
       </Paper>

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Optional Thumbrella thumbnails: paste a self-hosted server URL or a Thumbrella Cloud token in Settings to replace the object list's file type icons with streamed, batched previews for any supported format. Hovering the icon, file name or extension badge opens a larger preview listingand some media metadata. The preview also shows
+    this for formats the browser cannot natively display.
 - Select or deselect files inside the existing preview, with previous/next navigation across previewable files in table order, keyboard controls, pagination safeguards, and unsaved-edit protection. Selection stays in the table after closing. Adapted from @antonp2k's contribution in PR [#39](https://github.com/rgcsekaraa/brows3/pull/39), retaining the current image viewer and zoom controls.
 - Saved local-folder-to-S3 sync jobs with manual runs or in-app interval schedules, explicit future-upload approval, filters, saved bandwidth limits, pause/resume, confirmed cancellation and deletion, and completion/failure notifications.
 - Durable job recovery that pauses interrupted, failed, or missed-while-closed runs, prevents overlapping runs, and prevents multiple Brows3 instances from executing the same schedules. Jobs always compare fresh content and retain the existing guarded upload behavior.

@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, HTMLAttributes } from 'react';
 import {
   Box,
@@ -36,6 +36,9 @@ import { TableVirtuoso, type TableComponents } from 'react-virtuoso';
 import { S3Object } from '@/lib/tauri';
 import { formatSize } from '@/lib/utils';
 import { StyledCheckbox } from './StyledCheckbox';
+import { ObjectThumbnail } from './ObjectThumbnail';
+import { useObjectThumbnailUrl } from '@/hooks/useObjectThumbnail';
+import { useThumbnailsEnabled } from '@/hooks/useThumbrella';
 import { compareSortable } from '@/lib/objectSort';
 import { canObjectBeEdited, canObjectBePreviewed } from '@/lib/objectCapabilities';
 
@@ -128,11 +131,16 @@ interface ContextType {
   onPreview?: (key: string, size: number) => void;
   onEdit?: (key: string) => void;
   onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+  bucketName?: string;
+  bucketRegion?: string;
+  thumbnails: boolean;
 }
 
 interface Props {
   folders: string[];
   objects: S3Object[];
+  bucketName?: string;
+  bucketRegion?: string;
   selectedKeys: Set<string>;
   sortField: 'name' | 'size' | 'date' | 'class';
   sortDirection: 'asc' | 'desc';
@@ -207,6 +215,9 @@ const RowContent = memo(function RowContent({
   onPreview,
   onEdit,
   onMenuOpen,
+  bucketName,
+  bucketRegion,
+  thumbnails,
 }: {
   row: RowData;
   rowIndex: number;
@@ -216,10 +227,40 @@ const RowContent = memo(function RowContent({
   onPreview?: (key: string, size: number) => void;
   onEdit?: (key: string) => void;
   onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+  bucketName?: string;
+  bucketRegion?: string;
+  thumbnails: boolean;
 }) {
   const ext = getExt(row.name);
-  const canPreview = !row.isFolder && canObjectBePreviewed(row.name);
+  const canPreview = !row.isFolder && (canObjectBePreviewed(row.name) || thumbnails);
   const canEdit = !row.isFolder && canObjectBeEdited(row.name);
+  const thumbnailUrl = useObjectThumbnailUrl(bucketName, bucketRegion, row.key, thumbnails && !row.isFolder);
+
+  // The hover preview covers the icon, file name and extension badge. A short
+  // close delay lets the pointer move between them without flickering.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewOpenRef = useRef(false);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearPreviewTimer = useCallback(() => {
+    if (previewTimer.current) {
+      clearTimeout(previewTimer.current);
+      previewTimer.current = null;
+    }
+  }, []);
+  const setPreview = useCallback((open: boolean) => {
+    previewOpenRef.current = open;
+    setPreviewOpen(open);
+  }, []);
+  const handlePreviewEnter = useCallback(() => {
+    clearPreviewTimer();
+    if (previewOpenRef.current) return;
+    previewTimer.current = setTimeout(() => setPreview(true), 350);
+  }, [clearPreviewTimer, setPreview]);
+  const handlePreviewLeave = useCallback(() => {
+    clearPreviewTimer();
+    previewTimer.current = setTimeout(() => setPreview(false), 120);
+  }, [clearPreviewTimer, setPreview]);
+  useEffect(() => () => clearPreviewTimer(), [clearPreviewTimer]);
 
   // Debounce checkbox to prevent rapid clicking
   const handleCheckboxChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -240,8 +281,18 @@ const RowContent = memo(function RowContent({
           onChange={handleCheckboxChange}
         />
       </TableCell>
-      <TableCell sx={{ width: 32, py: 0.5, bgcolor: 'background.paper' }}>
-        {getIcon(row.name, row.isFolder)}
+      <TableCell sx={thumbnailUrl
+        ? { width: 32, py: 0.25, lineHeight: 0, bgcolor: 'background.paper' }
+        : { width: 32, py: 0.5, bgcolor: 'background.paper' }}>
+        {thumbnailUrl
+          ? <ObjectThumbnail
+              src={thumbnailUrl}
+              alt={row.name}
+              open={previewOpen}
+              onMouseEnter={handlePreviewEnter}
+              onMouseLeave={handlePreviewLeave}
+            />
+          : getIcon(row.name, row.isFolder)}
       </TableCell>
       <TableCell 
         sx={{ 
@@ -253,6 +304,8 @@ const RowContent = memo(function RowContent({
           bgcolor: 'background.paper',
         }}
         onClick={row.isFolder ? () => onNavigate(row.key) : undefined}
+        onMouseEnter={thumbnailUrl ? handlePreviewEnter : undefined}
+        onMouseLeave={thumbnailUrl ? handlePreviewLeave : undefined}
       >
         <Typography 
           variant="body2" 
@@ -314,6 +367,7 @@ const RowContent = memo(function RowContent({
 }, (prevProps, nextProps) => {
   // Custom comparison - only re-render if these specific props changed
   return prevProps.isSelected === nextProps.isSelected &&
+         prevProps.thumbnails === nextProps.thumbnails &&
          prevProps.row.key === nextProps.row.key &&
          prevProps.rowIndex === nextProps.rowIndex &&
          prevProps.row.size === nextProps.row.size &&
@@ -323,6 +377,8 @@ const RowContent = memo(function RowContent({
 export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   folders = [],
   objects = [],
+  bucketName,
+  bucketRegion,
   selectedKeys,
   sortField,
   sortDirection,
@@ -337,6 +393,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   onEndReached,
   isLoadingMore = false,
 }: Props) {
+  const thumbnails = useThumbnailsEnabled();
   // Build rows - highly optimized
   const rows = useMemo<RowData[]>(() => {
     const result: RowData[] = [];
@@ -433,7 +490,10 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     onPreview,
     onEdit,
     onMenuOpen,
-  }), [selectedKeys, onSelect, onNavigate, onPreview, onEdit, onMenuOpen]);
+    bucketName,
+    bucketRegion,
+    thumbnails,
+  }), [selectedKeys, onSelect, onNavigate, onPreview, onEdit, onMenuOpen, bucketName, bucketRegion, thumbnails]);
 
   const rowContent = useCallback((index: number, row: RowData, ctx: ContextType) => (
     <RowContent
@@ -446,6 +506,9 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       onPreview={ctx.onPreview}
       onEdit={ctx.onEdit}
       onMenuOpen={ctx.onMenuOpen}
+      bucketName={ctx.bucketName}
+      bucketRegion={ctx.bucketRegion}
+      thumbnails={ctx.thumbnails}
     />
   ), []);
 

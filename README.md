@@ -69,6 +69,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Configurable Text Preview Limit**: Choose a persisted 1–100 MB limit for text, HTML, and code previews. The Rust backend streams and enforces the same bound before text reaches the WebView.
 - **Media Previews**: Preview **images**, **audio**, **videos**, and **PDFs** through presigned object URLs without loading them into the text editor's memory allowance.
 - **Rendering Indicators**: Clear visual feedback for large image rendering states.
+- **Optional Thumbnails**: Add a [Thumbrella](https://thumbrella.dev) connect string in Settings to enable thumbnails in the file browser and lightweight previews.
 
 ### Performance
 
@@ -95,6 +96,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
   - Manage application data, clear cache, and check for updates manually.
   - One-click theme switching (Dark/Light/System).
   - Configure default regions, transfer concurrency, and the text-preview memory limit.
+  - Optional Thumbrella connect string for thumbnails in the object list.
 - **Auto-Updates**: Brows3 checks for updates and surfaces available signed releases from Settings/startup.
 - **Signed Release Pipeline**: Release automation validates updater signing and publishes updater metadata for desktop update flows.
 
